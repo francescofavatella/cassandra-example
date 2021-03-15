@@ -409,8 +409,323 @@ $ for i in $(ls *Data.db); do /opt/cassandra/tools/bin/sstabledump -d $i; done
 
 Cassandra will fully drop those tombstones when a compaction triggers, only after `local_delete_time + gc_grace_seconds` as defined on the table the data belongs to.
 
+## Components of the Cassandra data model
+### Partition key
+
+The **partition key** is responsible for distributing data among nodes. A partition key is the same as the primary key when the primary key consists of a single column.
+
+Partition keys belong to a node. Cassandra is organized into a cluster of nodes, with each node having an equal part of the partition key hashes.
+
+### Compound key
+**Compound keys** include multiple columns in the primary key, but these additional columns do not necessarily affect the partition key. A partition key with multiple columns is known as a **composite key**.
+
+### Clustering key
+Clustering keys are responsible for sorting data within a partition. Each primary key column after the partition key is considered a clustering key. Clustering keys are sorted in ascending order by default.
+
+### Composite key
+Composite keys are partition keys that consist of multiple columns.
+### A note about querying clustered composite keys
+When issuing a CQL query, you must include all partition key columns, at a minimum. You can then apply an additional filter by adding each clustering key in the order in which the clustering keys appear.
+
+## Example
+
+```
+CREATE TABLE IF NOT EXISTS example_primary_key (field1 int,field2 int,field3 int, PRIMARY KEY(field1));
+
+INSERT INTO example_primary_key (field1, field2, field3) VALUES (1,2,3);
+INSERT INTO example_primary_key (field1, field2, field3) VALUES (1,2,4);
+INSERT INTO example_primary_key (field1, field2, field3) VALUES (1,3,4);
+
+CREATE TABLE IF NOT EXISTS example_clustering_key (field1 int,field2 int,field3 int, PRIMARY KEY(field1, field2, field3));
+
+INSERT INTO example_clustering_key (field1, field2, field3) VALUES (1,2,3);
+INSERT INTO example_clustering_key (field1, field2, field3) VALUES (1,2,4);
+INSERT INTO example_clustering_key (field1, field2, field3) VALUES (1,3,4);
+
+
+CREATE TABLE IF NOT EXISTS example_composite_key (field1 int,field2 int,field3 int, PRIMARY KEY((field1, field2), field3));
+
+INSERT INTO example_composite_key (field1, field2, field3) VALUES (1,2,3);
+INSERT INTO example_composite_key (field1, field2, field3) VALUES (1,2,4);
+INSERT INTO example_composite_key (field1, field2, field3) VALUES (1,3,4);
+```
+
+```
+$ select * from example_primary_key;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+
+(1 rows)
+
+$ select * from example_clustering_key;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      2 |      3
+      1 |      2 |      4
+      1 |      3 |      4
+
+(3 rows)
+
+$ select * from example_composite_key;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+      1 |      2 |      3
+      1 |      2 |      4
+
+(3 rows)
+```
+
+```
+$ select * from example_primary_key where field1=1;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+
+(1 rows)
+
+$ select * from example_clustering_key where field1=1;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      2 |      3
+      1 |      2 |      4
+      1 |      3 |      4
+
+(3 rows)
+
+$ select * from example_composite_key where field1=1;
+InvalidRequest: Error from server: code=2200 [Invalid query] message="Cannot execute this query as it might involve data filtering and thus may have unpredictable performance. If you want to execute this query despite the performance unpredictability, use ALLOW FILTERING"
+```
+
+
+```
+$ select * from example_primary_key where field1=1 and field2=3;
+InvalidRequest: Error from server: code=2200 [Invalid query] message="Cannot execute this query as it might involve data filtering and thus may have unpredictable performance. If you want to execute this query despite the performance unpredictability, use ALLOW FILTERING"
+$ select * from example_clustering_key where field1=1 and field2=3;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+
+(1 rows)
+
+$ select * from example_composite_key where field1=1 and field2=3;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+
+(1 rows)
+```
+
+
+```
+$ select * from example_clustering_key where field1=1 and field3=4;
+InvalidRequest: Error from server: code=2200 [Invalid query] message="PRIMARY KEY column "field3" cannot be restricted as preceding column "field2" is not restricted"
+
+$ select * from example_composite_key where field1=1 and field3=4;
+InvalidRequest: Error from server: code=2200 [Invalid query] message="Cannot execute this query as it might involve data filtering and thus may have unpredictable performance. If you want to execute this query despite the performance unpredictability, use ALLOW FILTERING"
+```
+
+
+
+
+```
+$ select * from example_clustering_key where field1=1 and field2=3 and field3=4;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+
+(1 rows)
+
+$ select * from example_composite_key where field1=1 and field2=3 and field3=4;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      3 |      4
+
+(1 rows)
+```
+
+
+```
+$ select * from example_clustering_key where field1=1 and field2=2;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      2 |      3
+      1 |      2 |      4
+
+(2 rows)
+
+$ select * from example_composite_key where field1=1 and field2=2;
+
+ field1 | field2 | field3
+--------+--------+--------
+      1 |      2 |      3
+      1 |      2 |      4
+
+(2 rows)
+```
+
+
+```
+nodetool flush -- test
+```
+
+```
+$ sstableutil test example_primary_key
+
+Listing files...
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-CompressionInfo.db
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Data.db
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Digest.crc32
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Filter.db
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Index.db
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Statistics.db
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Summary.db
+/var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-TOC.txt
+
+$ /opt/cassandra/tools/bin/sstabledump /var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Data.db -d
+
+[1]@0 Row[info=[ts=1615842314268468] ]:  | [field2=3 ts=1615842314268468], [field3=4 ts=1615842314268468]
+
+$ /opt/cassandra/tools/bin/sstabledump /var/lib/cassandra/data/test/example_primary_key-22fc528085d211eb8df86d2c86545d91/md-1-big-Data.db
+
+[
+  {
+    "partition" : {
+      "key" : [ "1" ],
+      "position" : 0
+    },
+    "rows" : [
+      {
+        "type" : "row",
+        "position" : 18,
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:14.268468Z" },
+        "cells" : [
+          { "name" : "field2", "value" : 3 },
+          { "name" : "field3", "value" : 4 }
+        ]
+      }
+    ]
+  }
+]
+```
+
+```
+$ sstableutil test example_clustering_key | grep Data | xargs /opt/cassandra/tools/bin/sstabledump -d
+
+
+[1]@0 Row[info=[ts=1615842314386100] ]: 2, 3 |
+[1]@31 Row[info=[ts=1615842314390177] ]: 2, 4 |
+[1]@45 Row[info=[ts=1615842314394896] ]: 3, 4 |
+
+$ sstableutil test example_clustering_key | grep Data | xargs /opt/cassandra/tools/bin/sstabledump
+
+[
+  {
+    "partition" : {
+      "key" : [ "1" ],
+      "position" : 0
+    },
+    "rows" : [
+      {
+        "type" : "row",
+        "position" : 18,
+        "clustering" : [ 2, 3 ],
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:14.386100Z" },
+        "cells" : [ ]
+      },
+      {
+        "type" : "row",
+        "position" : 31,
+        "clustering" : [ 2, 4 ],
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:14.390177Z" },
+        "cells" : [ ]
+      },
+      {
+        "type" : "row",
+        "position" : 45,
+        "clustering" : [ 3, 4 ],
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:14.394896Z" },
+        "cells" : [ ]
+      }
+    ]
+  }
+]
+```
+
+```
+$ sstableutil test example_composite_key | grep Data | xargs /opt/cassandra/tools/bin/sstabledump -d
+
+[1:3]@0 Row[info=[ts=1615842315676373] ]: 4 |
+[1:2]@40 Row[info=[ts=1615842314508722] ]: 3 |
+[1:2]@77 Row[info=[ts=1615842314512551] ]: 4 |
+
+$ sstableutil test example_composite_key | grep Data | xargs /opt/cassandra/tools/bin/sstabledump -d
+
+[
+  {
+    "partition" : {
+      "key" : [ "1", "3" ],
+      "position" : 0
+    },
+    "rows" : [
+      {
+        "type" : "row",
+        "position" : 28,
+        "clustering" : [ 4 ],
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:15.676373Z" },
+        "cells" : [ ]
+      }
+    ]
+  },
+  {
+    "partition" : {
+      "key" : [ "1", "2" ],
+      "position" : 40
+    },
+    "rows" : [
+      {
+        "type" : "row",
+        "position" : 68,
+        "clustering" : [ 3 ],
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:14.508722Z" },
+        "cells" : [ ]
+      },
+      {
+        "type" : "row",
+        "position" : 77,
+        "clustering" : [ 4 ],
+        "liveness_info" : { "tstamp" : "2021-03-15T21:05:14.512551Z" },
+        "cells" : [ ]
+      }
+    ]
+  }
+]
+```
 ## Delete the local Cassandra instance
+
+At the end of the example clean your local environment.
 
 ```
 docker stop cassandra-example && docker rm cassandra-example
 ```
+
+
+## References
+[Designing a Cassandra Data Model](https://shermandigital.com/blog/designing-a-cassandra-data-model/)
+
+[CQL & Data Structure](https://teddyma.gitbooks.io/learncassandra/content/model/cql_and_data_structure.html)
+
+[How Cassandra Stores Data on Filesystem](https://saumitra.me/blog/how-cassandra-stores-data-on-filesystem/)
+
+[sstabledump](https://cassandra.apache.org/doc/latest/tools/sstable/sstabledump.html)
