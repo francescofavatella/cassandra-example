@@ -410,6 +410,7 @@ $ for i in $(ls *Data.db); do /opt/cassandra/tools/bin/sstabledump -d $i; done
 Cassandra will fully drop those tombstones when a compaction triggers, only after `local_delete_time + gc_grace_seconds` as defined on the table the data belongs to.
 
 ## Components of the Cassandra data model
+
 ### Partition key
 
 The **partition key** is responsible for distributing data among nodes. A partition key is the same as the primary key when the primary key consists of a single column.
@@ -417,14 +418,19 @@ The **partition key** is responsible for distributing data among nodes. A partit
 Partition keys belong to a node. Cassandra is organized into a cluster of nodes, with each node having an equal part of the partition key hashes.
 
 ### Compound key
+
 **Compound keys** include multiple columns in the primary key, but these additional columns do not necessarily affect the partition key. A partition key with multiple columns is known as a **composite key**.
 
 ### Clustering key
+
 Clustering keys are responsible for sorting data within a partition. Each primary key column after the partition key is considered a clustering key. Clustering keys are sorted in ascending order by default.
 
 ### Composite key
+
 Composite keys are partition keys that consist of multiple columns.
+
 ### A note about querying clustered composite keys
+
 When issuing a CQL query, you must include all partition key columns, at a minimum. You can then apply an additional filter by adding each clustering key in the order in which the clustering keys appear.
 
 ## Example
@@ -503,7 +509,6 @@ $ select * from example_composite_key where field1=1;
 InvalidRequest: Error from server: code=2200 [Invalid query] message="Cannot execute this query as it might involve data filtering and thus may have unpredictable performance. If you want to execute this query despite the performance unpredictability, use ALLOW FILTERING"
 ```
 
-
 ```
 $ select * from example_primary_key where field1=1 and field2=3;
 InvalidRequest: Error from server: code=2200 [Invalid query] message="Cannot execute this query as it might involve data filtering and thus may have unpredictable performance. If you want to execute this query despite the performance unpredictability, use ALLOW FILTERING"
@@ -524,7 +529,6 @@ $ select * from example_composite_key where field1=1 and field2=3;
 (1 rows)
 ```
 
-
 ```
 $ select * from example_clustering_key where field1=1 and field3=4;
 InvalidRequest: Error from server: code=2200 [Invalid query] message="PRIMARY KEY column "field3" cannot be restricted as preceding column "field2" is not restricted"
@@ -532,9 +536,6 @@ InvalidRequest: Error from server: code=2200 [Invalid query] message="PRIMARY KE
 $ select * from example_composite_key where field1=1 and field3=4;
 InvalidRequest: Error from server: code=2200 [Invalid query] message="Cannot execute this query as it might involve data filtering and thus may have unpredictable performance. If you want to execute this query despite the performance unpredictability, use ALLOW FILTERING"
 ```
-
-
-
 
 ```
 $ select * from example_clustering_key where field1=1 and field2=3 and field3=4;
@@ -553,7 +554,6 @@ $ select * from example_composite_key where field1=1 and field2=3 and field3=4;
 
 (1 rows)
 ```
-
 
 ```
 $ select * from example_clustering_key where field1=1 and field2=2;
@@ -574,7 +574,6 @@ $ select * from example_composite_key where field1=1 and field2=2;
 
 (2 rows)
 ```
-
 
 ```
 nodetool flush -- test
@@ -712,6 +711,7 @@ $ sstableutil test example_composite_key | grep Data | xargs /opt/cassandra/tool
   }
 ]
 ```
+
 ## Delete the local Cassandra instance
 
 At the end of the example clean your local environment.
@@ -720,8 +720,8 @@ At the end of the example clean your local environment.
 docker stop cassandra-example && docker rm cassandra-example
 ```
 
-
 ## References
+
 [Designing a Cassandra Data Model](https://shermandigital.com/blog/designing-a-cassandra-data-model/)
 
 [CQL & Data Structure](https://teddyma.gitbooks.io/learncassandra/content/model/cql_and_data_structure.html)
@@ -729,3 +729,9 @@ docker stop cassandra-example && docker rm cassandra-example
 [How Cassandra Stores Data on Filesystem](https://saumitra.me/blog/how-cassandra-stores-data-on-filesystem/)
 
 [sstabledump](https://cassandra.apache.org/doc/latest/tools/sstable/sstabledump.html)
+
+[Introduction to Apache Cassandra - Video](https://www.youtube.com/watch?v=1VL73lR_Uw8)
+
+[Intro to Cassandra for Developers - Presentation](https://github.com/DataStax-Academy/Intro-to-Cassandra-for-Developers/blob/master/slides/Presentation.pdf)
+
+[Intro to Cassandra for Developers using DataStax Astra](https://github.com/DataStax-Academy/Intro-to-Cassandra-for-Developers)
